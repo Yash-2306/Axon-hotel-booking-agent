@@ -1,0 +1,8 @@
+crewai==0.130.0
+crewai-tools==0.47.1
+streamlit==1.45.1
+playwright==1.51.0
+html2text==2024.2.26
+python-dotenv==1.1.0
+groq==0.28.0
+pydantic==2.11.4
