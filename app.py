@@ -1,7 +1,22 @@
 import os
 import json
 import datetime
+import subprocess
+import sys
 import streamlit as st
+
+# Auto-install Playwright browsers (needed on Streamlit Cloud)
+@st.cache_resource(show_spinner=False)
+def _install_playwright():
+    try:
+        subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium", "--with-deps"],
+            check=False, capture_output=True, timeout=120
+        )
+    except Exception:
+        pass
+
+_install_playwright()
 from crewai import Crew, Process, Task, Agent, LLM
 from dotenv import load_dotenv
 from browser import stealth_browser
