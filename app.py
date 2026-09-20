@@ -142,12 +142,12 @@ with st.sidebar:
     model_choice = st.selectbox(
         "🤖 Model",
         options=[
-            "groq/meta-llama/llama-4-scout-17b-16e-instruct",
             "groq/llama-3.3-70b-versatile",
             "groq/llama3-70b-8192",
+            "groq/llama3-8b-8192",
         ],
         index=0,
-        help="Llama 4 Scout is fastest and free on Groq"
+        help="llama-3.3-70b-versatile is the best free model on Groq"
     )
 
     st.markdown("---")
