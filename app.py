@@ -130,10 +130,17 @@ with st.sidebar:
     st.markdown("### ⚙️ Configuration")
     st.markdown("---")
 
+    # Load key from Streamlit secrets first (cloud), then let user override
+    default_key = ""
+    try:
+        default_key = st.secrets.get("GROQ_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
+    except Exception:
+        default_key = os.environ.get("GROQ_API_KEY", "")
+
     groq_key = st.text_input(
         "🔑 Groq API Key",
         type="password",
-        value=os.environ.get("GROQ_API_KEY", ""),
+        value=default_key,
         help="Get a free key at console.groq.com"
     )
     if groq_key:
@@ -142,12 +149,12 @@ with st.sidebar:
     model_choice = st.selectbox(
         "🤖 Model",
         options=[
-            "groq/llama-3.3-70b-versatile",
             "groq/llama3-70b-8192",
             "groq/llama3-8b-8192",
+            "groq/mixtral-8x7b-32768",
         ],
         index=0,
-        help="llama-3.3-70b-versatile is the best free model on Groq"
+        help="llama3-70b-8192 is the most capable free model on Groq"
     )
 
     st.markdown("---")
