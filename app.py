@@ -198,7 +198,7 @@ if "search_history" not in st.session_state:
 def get_llm(model: str, api_key: str):
     return LLM(
         model=model,
-        api_key=api_key,
+        api_key=api_key.strip(),
         temperature=0.3,
     )
 
@@ -372,7 +372,7 @@ if query:
         st.write("📊 **Deal Analyst** — Ranking hotels and computing value scores...")
 
         try:
-            crew = build_crew(model_choice, groq_key)
+            crew = build_crew(model_choice, groq_key.strip())
             result = crew.kickoff(inputs={
                 "user_request": query,
                 "today_date": today,
