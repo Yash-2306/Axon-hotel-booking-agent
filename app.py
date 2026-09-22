@@ -145,16 +145,16 @@ with st.sidebar:
     )
     if groq_key:
         os.environ["GROQ_API_KEY"] = groq_key
+        st.cache_resource.clear()  # Force LLM rebuild with new key
 
     model_choice = st.selectbox(
         "🤖 Model",
         options=[
-            "groq/llama3-70b-8192",
-            "groq/llama3-8b-8192",
-            "groq/mixtral-8x7b-32768",
+            "groq/llama-3.3-70b-versatile",
+            "groq/llama-3.1-8b-instant",
         ],
         index=0,
-        help="llama3-70b-8192 is the most capable free model on Groq"
+        help="llama-3.3-70b-versatile is Groq's current flagship free model"
     )
 
     st.markdown("---")
@@ -195,12 +195,16 @@ if "search_history" not in st.session_state:
 # LLM + AGENTS FACTORY
 # ──────────────────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
-def get_llm(model: str):
-    return LLM(model=model)
+def get_llm(model: str, api_key: str):
+    return LLM(
+        model=model,
+        api_key=api_key,
+        temperature=0.3,
+    )
 
 
-def build_crew(model: str) -> Crew:
-    llm = get_llm(model)
+def build_crew(model: str, api_key: str) -> Crew:
+    llm = get_llm(model, api_key)
 
     # ── Agent 1: Trip Requirements Planner ──────────────────────────────────
     planner = Agent(
@@ -368,7 +372,7 @@ if query:
         st.write("📊 **Deal Analyst** — Ranking hotels and computing value scores...")
 
         try:
-            crew = build_crew(model_choice)
+            crew = build_crew(model_choice, groq_key)
             result = crew.kickoff(inputs={
                 "user_request": query,
                 "today_date": today,
