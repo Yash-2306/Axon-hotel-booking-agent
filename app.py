@@ -133,9 +133,9 @@ with st.sidebar:
     # Load key from Streamlit secrets first (cloud), then let user override
     default_key = ""
     try:
-        default_key = st.secrets.get("GROQ_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")
+        default_key = (st.secrets.get("GROQ_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")).strip()
     except Exception:
-        default_key = os.environ.get("GROQ_API_KEY", "")
+        default_key = os.environ.get("GROQ_API_KEY", "").strip()
 
     groq_key = st.text_input(
         "🔑 Groq API Key",
@@ -144,7 +144,7 @@ with st.sidebar:
         help="Get a free key at console.groq.com"
     )
     if groq_key:
-        os.environ["GROQ_API_KEY"] = groq_key
+        os.environ["GROQ_API_KEY"] = groq_key.strip()  # strip trailing spaces/newlines
         st.cache_resource.clear()  # Force LLM rebuild with new key
 
     model_choice = st.selectbox(
