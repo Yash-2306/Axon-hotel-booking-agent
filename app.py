@@ -41,6 +41,8 @@ _AUTO_KEY, _DETECTED_SECRETS_KEYS = _load_groq_key_from_secrets()
 
 if _AUTO_KEY:
     os.environ["GROQ_API_KEY"] = _AUTO_KEY
+    os.environ["OPENAI_API_KEY"] = _AUTO_KEY
+    os.environ["OPENAI_BASE_URL"] = "https://api.groq.com/openai/v1"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # AUTO-INSTALL PLAYWRIGHT (needed on Streamlit Cloud)
@@ -57,8 +59,7 @@ def _install_playwright():
 
 _install_playwright()
 
-from langchain_groq import ChatGroq
-from crewai import Crew, Process, Task, Agent
+from crewai import Crew, Process, Task, Agent, LLM
 from browser import stealth_browser
 from kayak import kayak_hotels
 from tools import parse_trip_requirements
@@ -209,6 +210,8 @@ with st.sidebar:
     _ACTIVE_KEY = effective_key
     if _ACTIVE_KEY:
         os.environ["GROQ_API_KEY"] = _ACTIVE_KEY
+        os.environ["OPENAI_API_KEY"] = _ACTIVE_KEY
+        os.environ["OPENAI_BASE_URL"] = "https://api.groq.com/openai/v1"
 
     # Dynamically discover models available to this specific key
     available_models = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
@@ -271,14 +274,17 @@ if "search_history" not in st.session_state:
     st.session_state.search_history = []
 
 # ──────────────────────────────────────────────────────────────────────────────
-# LLM + CREW FACTORY  (using langchain-groq directly — no litellm routing)
+# LLM + CREW FACTORY  (CrewAI native LLM with explicit groq/ provider prefix)
 # ──────────────────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def get_llm(model: str, api_key: str):
-    """Build a ChatGroq LLM — langchain-groq talks to Groq natively."""
-    return ChatGroq(
-        model=model,
-        api_key=api_key,
+    """Build a CrewAI LLM explicitly routed to Groq."""
+    clean_model = model.strip()
+    if not clean_model.startswith("groq/"):
+        clean_model = f"groq/{clean_model}"
+    return LLM(
+        model=clean_model,
+        api_key=api_key.strip(),
         temperature=0.3,
     )
 
