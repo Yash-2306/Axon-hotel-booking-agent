@@ -8,30 +8,36 @@ import urllib.request
 import streamlit as st
 
 # ──────────────────────────────────────────────────────────────────────────────
-# GROQ API KEY — tries secrets, then env var, then falls back to input
+# GROQ API KEY — tries secrets (case-insensitive + nested tables), env vars,
+# and provides an optional sidebar override so you are never locked out
 # ──────────────────────────────────────────────────────────────────────────────
-def _load_groq_key() -> str:
-    # 1. Streamlit secrets (dict-style)
+def _load_groq_key_from_secrets() -> tuple[str, list[str]]:
+    detected_keys = []
+    # Try traversing st.secrets dynamically
     try:
-        v = st.secrets["GROQ_API_KEY"]
-        if v:
-            return str(v).strip()
+        for k in st.secrets.keys():
+            detected_keys.append(str(k))
+            val = st.secrets[k]
+            if isinstance(val, dict):
+                for sub_k, sub_v in val.items():
+                    detected_keys.append(f"{k}.{sub_k}")
+                    if "groq" in sub_k.lower() and "key" in sub_k.lower():
+                        if str(sub_v).strip():
+                            return str(sub_v).strip(), detected_keys
+            elif "groq" in str(k).lower() and "key" in str(k).lower():
+                if str(val).strip():
+                    return str(val).strip(), detected_keys
     except Exception:
         pass
-    # 2. Streamlit secrets (.get style)
-    try:
-        v = st.secrets.get("GROQ_API_KEY", "")
-        if v:
-            return str(v).strip()
-    except Exception:
-        pass
-    # 3. Environment variable (set by Streamlit from secrets or manually)
-    v = os.environ.get("GROQ_API_KEY", "").strip()
-    if v:
-        return v
-    return ""
 
-_GROQ_KEY = _load_groq_key()
+    # Try standard environment variable
+    env_val = os.environ.get("GROQ_API_KEY", "").strip()
+    if env_val:
+        return env_val, detected_keys
+
+    return "", detected_keys
+
+_AUTO_KEY, _DETECTED_SECRETS_KEYS = _load_groq_key_from_secrets()
 
 if _GROQ_KEY:
     os.environ["GROQ_API_KEY"] = _GROQ_KEY
@@ -165,20 +171,39 @@ st.markdown('<div class="main-header">🏨 StayAI</div>', unsafe_allow_html=True
 st.markdown('<div class="sub-header">Multi-Agent Hotel Search · Powered by CrewAI + Groq + Live Browser</div>', unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SIDEBAR  (no API key input — loaded from secrets automatically)
+# SIDEBAR
 # ──────────────────────────────────────────────────────────────────────────────
+_ACTIVE_KEY = _AUTO_KEY
 with st.sidebar:
     st.markdown("### ⚙️ Configuration")
     st.markdown("---")
 
-    # Show key status (masked)
-    if _GROQ_KEY:
-        masked = _GROQ_KEY[:8] + "..." + _GROQ_KEY[-4:]
-        st.success(f"✅ API Key loaded ({masked})")
+    # Determine effective key
+    effective_key = _AUTO_KEY
+    if effective_key:
+        masked = effective_key[:8] + "..." + effective_key[-4:]
+        st.success(f"✅ Key loaded from secrets ({masked})")
     else:
-        st.error("❌ GROQ_API_KEY not set")
-        st.caption("Paste your key in Streamlit Cloud → Settings → Secrets:") 
-        st.code('GROQ_API_KEY = "gsk_xxxx"', language="toml")
+        st.warning("⚠️ API Key not detected in secrets")
+        if _DETECTED_SECRETS_KEYS:
+            st.caption(f"Keys visible to app: {', '.join(_DETECTED_SECRETS_KEYS)}")
+        else:
+            st.caption("No keys found in Streamlit Secrets yet.")
+            
+        manual_key = st.text_input(
+            "Enter Groq Key to run right now:",
+            type="password",
+            value=st.session_state.get("user_key", ""),
+            help="Get a free key from console.groq.com",
+            placeholder="gsk_..."
+        )
+        if manual_key:
+            st.session_state["user_key"] = manual_key.strip()
+            effective_key = manual_key.strip()
+
+    _ACTIVE_KEY = effective_key
+    if _ACTIVE_KEY:
+        os.environ["GROQ_API_KEY"] = _ACTIVE_KEY
 
     model_choice = st.selectbox(
         "🤖 Model",
@@ -389,8 +414,8 @@ if prefill and not query:
 
 if query:
     # Check key is available
-    if not _GROQ_KEY:
-        st.error("❌ GROQ_API_KEY not set in Streamlit secrets. Please contact the app owner.")
+    if not _ACTIVE_KEY:
+        st.error("❌ Groq API key is required. Please add it to Streamlit secrets or enter it in the sidebar.")
         st.stop()
 
     # Store user message
@@ -405,7 +430,7 @@ if query:
         st.write("📊 **Deal Analyst** — Ranking hotels and computing value scores...")
 
         try:
-            crew = build_crew(model_choice, _GROQ_KEY)
+            crew = build_crew(model_choice, _ACTIVE_KEY)
             result = crew.kickoff(inputs={
                 "user_request": query,
                 "today_date": today,
