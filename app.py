@@ -179,27 +179,32 @@ with st.sidebar:
     st.markdown("---")
 
     # Determine effective key
-    effective_key = _AUTO_KEY
-    if effective_key:
-        masked = effective_key[:8] + "..." + effective_key[-4:]
-        st.success(f"✅ Key loaded from secrets ({masked})")
+    user_entered = st.session_state.get("user_key", "").strip()
+
+    if _AUTO_KEY:
+        masked = _AUTO_KEY[:8] + "..." + _AUTO_KEY[-4:]
+        st.success(f"✅ Key active from secrets ({masked})")
+        effective_key = _AUTO_KEY
+    elif user_entered:
+        masked = user_entered[:8] + "..." + user_entered[-4:]
+        st.success(f"✅ Key active ({masked})")
+        effective_key = user_entered
+        if st.button("Change Key", key="reset_key_btn"):
+            st.session_state["user_key"] = ""
+            st.rerun()
     else:
-        st.warning("⚠️ API Key not detected in secrets")
-        if _DETECTED_SECRETS_KEYS:
-            st.caption(f"Keys visible to app: {', '.join(_DETECTED_SECRETS_KEYS)}")
-        else:
-            st.caption("No keys found in Streamlit Secrets yet.")
-            
+        st.info("🔑 Enter your Groq API Key to start:")
         manual_key = st.text_input(
-            "Enter Groq Key to run right now:",
+            "Groq API Key",
             type="password",
-            value=st.session_state.get("user_key", ""),
-            help="Get a free key from console.groq.com",
-            placeholder="gsk_..."
+            placeholder="gsk_...",
+            help="Free key from console.groq.com",
+            key="input_groq_key"
         )
         if manual_key:
             st.session_state["user_key"] = manual_key.strip()
-            effective_key = manual_key.strip()
+            st.rerun()
+        effective_key = manual_key.strip() if manual_key else ""
 
     _ACTIVE_KEY = effective_key
     if _ACTIVE_KEY:
