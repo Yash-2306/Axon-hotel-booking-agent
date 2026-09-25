@@ -39,8 +39,8 @@ def _load_groq_key_from_secrets() -> tuple[str, list[str]]:
 
 _AUTO_KEY, _DETECTED_SECRETS_KEYS = _load_groq_key_from_secrets()
 
-if _GROQ_KEY:
-    os.environ["GROQ_API_KEY"] = _GROQ_KEY
+if _AUTO_KEY:
+    os.environ["GROQ_API_KEY"] = _AUTO_KEY
 
 # ──────────────────────────────────────────────────────────────────────────────
 # AUTO-INSTALL PLAYWRIGHT (needed on Streamlit Cloud)
