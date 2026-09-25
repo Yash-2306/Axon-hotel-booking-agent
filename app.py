@@ -210,14 +210,30 @@ with st.sidebar:
     if _ACTIVE_KEY:
         os.environ["GROQ_API_KEY"] = _ACTIVE_KEY
 
+    # Dynamically discover models available to this specific key
+    available_models = ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b"]
+    if _ACTIVE_KEY:
+        try:
+            req = urllib.request.Request(
+                "https://api.groq.com/openai/v1/models",
+                headers={"Authorization": f"Bearer {_ACTIVE_KEY}", "User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                m_data = json.loads(resp.read().decode())
+                fetched = [
+                    m["id"] for m in m_data.get("data", [])
+                    if not any(x in m["id"].lower() for x in ["whisper", "guard", "safeguard", "orpheus"])
+                ]
+                if fetched:
+                    available_models = sorted(fetched, reverse=True)
+        except Exception:
+            pass
+
     model_choice = st.selectbox(
         "🤖 Model",
-        options=[
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-        ],
+        options=available_models,
         index=0,
-        help="llama-3.3-70b-versatile is Groq's current flagship free model",
+        help="Models verified and active on your Groq key",
     )
 
     st.markdown("---")
