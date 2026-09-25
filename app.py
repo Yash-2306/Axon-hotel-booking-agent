@@ -1,11 +1,26 @@
 import os
-import json
+import sys
 import datetime
 import subprocess
-import sys
+import threading
+import time
+import urllib.request
 import streamlit as st
 
-# Auto-install Playwright browsers (needed on Streamlit Cloud)
+# ──────────────────────────────────────────────────────────────────────────────
+# GROQ API KEY — loaded ONLY from Streamlit secrets (never from sidebar)
+# ──────────────────────────────────────────────────────────────────────────────
+try:
+    _GROQ_KEY = st.secrets["GROQ_API_KEY"].strip()
+except Exception:
+    _GROQ_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+
+if _GROQ_KEY:
+    os.environ["GROQ_API_KEY"] = _GROQ_KEY
+
+# ──────────────────────────────────────────────────────────────────────────────
+# AUTO-INSTALL PLAYWRIGHT (needed on Streamlit Cloud)
+# ──────────────────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def _install_playwright():
     try:
@@ -17,13 +32,34 @@ def _install_playwright():
         pass
 
 _install_playwright()
-from crewai import Crew, Process, Task, Agent, LLM
-from dotenv import load_dotenv
+
+from langchain_groq import ChatGroq
+from crewai import Crew, Process, Task, Agent
 from browser import stealth_browser
 from kayak import kayak_hotels
 from tools import parse_trip_requirements
 
-load_dotenv()
+# ──────────────────────────────────────────────────────────────────────────────
+# KEEP-ALIVE PING (prevents Streamlit Cloud from sleeping)
+# ──────────────────────────────────────────────────────────────────────────────
+_PING_URL = None  # Auto-detected from Streamlit's browser URL if available
+
+def _ping_loop():
+    """Pings this app's URL every 4 minutes to prevent Streamlit sleep."""
+    while True:
+        time.sleep(240)
+        try:
+            url = st.session_state.get("_app_url")
+            if url:
+                urllib.request.urlopen(url, timeout=10)
+        except Exception:
+            pass
+
+# Start ping thread once per session (daemon so it dies with the process)
+if "ping_started" not in st.session_state:
+    st.session_state["ping_started"] = True
+    t = threading.Thread(target=_ping_loop, daemon=True)
+    t.start()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PAGE CONFIG
@@ -40,10 +76,8 @@ st.set_page_config(
 # ──────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    /* Main background */
     .stApp { background: linear-gradient(135deg, #0f0c29, #302b63, #24243e); }
-    
-    /* Header */
+
     .main-header {
         background: linear-gradient(90deg, #FF385C, #FF7B8A);
         -webkit-background-clip: text;
@@ -61,7 +95,6 @@ st.markdown("""
         margin-bottom: 2rem;
     }
 
-    /* Cards */
     .hotel-card {
         background: rgba(255,255,255,0.07);
         border: 1px solid rgba(255,255,255,0.12);
@@ -73,7 +106,6 @@ st.markdown("""
     }
     .hotel-card:hover { transform: translateY(-2px); }
 
-    /* Badges */
     .badge {
         display: inline-block;
         padding: 0.2rem 0.6rem;
@@ -86,13 +118,11 @@ st.markdown("""
     .badge-rated { background: #00b894; color: white; }
     .badge-tag   { background: rgba(255,255,255,0.15); color: #eee; }
 
-    /* Sidebar styling */
     section[data-testid="stSidebar"] {
         background: rgba(255,255,255,0.04) !important;
         border-right: 1px solid rgba(255,255,255,0.08);
     }
-    
-    /* Chat messages */
+
     .user-msg {
         background: linear-gradient(135deg, #FF385C22, #FF385C44);
         border: 1px solid #FF385C66;
@@ -101,19 +131,12 @@ st.markdown("""
         margin: 0.5rem 0;
         color: white;
     }
-    .agent-step {
-        background: rgba(255,255,255,0.05);
-        border-left: 3px solid #FF385C;
-        padding: 0.5rem 1rem;
-        margin: 0.25rem 0;
-        border-radius: 0 8px 8px 0;
-        font-size: 0.85rem;
-        color: #ccc;
+
+    .stTextArea textarea {
+        background: rgba(255,255,255,0.08) !important;
+        color: white !important;
+        border: 1px solid rgba(255,255,255,0.2) !important;
     }
-    
-    /* Input overrides */
-    .stTextInput > div > div > input { background: rgba(255,255,255,0.08) !important; color: white !important; border: 1px solid rgba(255,255,255,0.2) !important; }
-    .stTextArea textarea { background: rgba(255,255,255,0.08) !important; color: white !important; border: 1px solid rgba(255,255,255,0.2) !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -124,54 +147,43 @@ st.markdown('<div class="main-header">🏨 StayAI</div>', unsafe_allow_html=True
 st.markdown('<div class="sub-header">Multi-Agent Hotel Search · Powered by CrewAI + Groq + Live Browser</div>', unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# SIDEBAR
+# SIDEBAR  (no API key input — loaded from secrets automatically)
 # ──────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("### ⚙️ Configuration")
     st.markdown("---")
 
-    # Load key from Streamlit secrets first (cloud), then let user override
-    default_key = ""
-    try:
-        default_key = (st.secrets.get("GROQ_API_KEY", "") or os.environ.get("GROQ_API_KEY", "")).strip()
-    except Exception:
-        default_key = os.environ.get("GROQ_API_KEY", "").strip()
-
-    groq_key = st.text_input(
-        "🔑 Groq API Key",
-        type="password",
-        value=default_key,
-        help="Get a free key at console.groq.com"
-    )
-    if groq_key:
-        os.environ["GROQ_API_KEY"] = groq_key.strip()  # strip trailing spaces/newlines
-        st.cache_resource.clear()  # Force LLM rebuild with new key
+    # Show key status (masked)
+    if _GROQ_KEY:
+        st.success("✅ API Key loaded from secrets")
+    else:
+        st.error("❌ GROQ_API_KEY not found in secrets")
 
     model_choice = st.selectbox(
         "🤖 Model",
         options=[
-            "groq/llama-3.3-70b-versatile",
-            "groq/llama-3.1-8b-instant",
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
         ],
         index=0,
-        help="llama-3.3-70b-versatile is Groq's current flagship free model"
+        help="llama-3.3-70b-versatile is Groq's current flagship free model",
     )
 
     st.markdown("---")
     st.markdown("### 📖 How It Works")
     st.markdown("""
-    **3 Specialized AI Agents:**
-    
-    🧠 **Trip Planner**  
-    Understands your request & extracts travel requirements
-    
-    🌐 **Live Search Agent**  
-    Browses Kayak in real-time to find available hotels
-    
-    📊 **Deal Analyst**  
-    Scores & ranks hotels by value, ratings and your preferences
-    """)
-    
+**3 Specialized AI Agents:**
+
+🧠 **Trip Planner**  
+Understands your request & extracts travel requirements
+
+🌐 **Live Search Agent**  
+Browses Kayak in real-time to find available hotels
+
+📊 **Deal Analyst**  
+Scores & ranks hotels by value, ratings and your preferences
+""")
+
     st.markdown("---")
     st.markdown("### 💡 Example Queries")
     examples = [
@@ -192,13 +204,14 @@ if "search_history" not in st.session_state:
     st.session_state.search_history = []
 
 # ──────────────────────────────────────────────────────────────────────────────
-# LLM + AGENTS FACTORY
+# LLM + CREW FACTORY  (using langchain-groq directly — no litellm routing)
 # ──────────────────────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner=False)
 def get_llm(model: str, api_key: str):
-    return LLM(
+    """Build a ChatGroq LLM — langchain-groq talks to Groq natively."""
+    return ChatGroq(
         model=model,
-        api_key=api_key.strip(),
+        api_key=api_key,
         temperature=0.3,
     )
 
@@ -354,16 +367,15 @@ if prefill and not query:
     query = prefill
 
 if query:
-    # Validate API key
-    if not os.environ.get("GROQ_API_KEY"):
-        st.error("⚠️ Please enter your Groq API key in the sidebar first.")
+    # Check key is available
+    if not _GROQ_KEY:
+        st.error("❌ GROQ_API_KEY not set in Streamlit secrets. Please contact the app owner.")
         st.stop()
 
     # Store user message
     st.session_state.messages.append({"role": "user", "content": query})
     st.markdown(f'<div class="user-msg">👤 {query}</div>', unsafe_allow_html=True)
 
-    # Build and run crew
     today = datetime.datetime.now().strftime("%Y-%m-%d")
 
     with st.status("🤖 AI Agents are working...", expanded=True) as status:
@@ -372,7 +384,7 @@ if query:
         st.write("📊 **Deal Analyst** — Ranking hotels and computing value scores...")
 
         try:
-            crew = build_crew(model_choice, groq_key.strip())
+            crew = build_crew(model_choice, _GROQ_KEY)
             result = crew.kickoff(inputs={
                 "user_request": query,
                 "today_date": today,
@@ -384,16 +396,14 @@ if query:
             response_text = (
                 f"⚠️ **Search Error:** {str(e)}\n\n"
                 "This usually happens when:\n"
-                "- The Groq API key is invalid or rate-limited\n"
-                "- Kayak blocked the browser request (common with cloud IPs)\n\n"
-                "**Try:** A different destination, or check your API key in the sidebar."
+                "- Kayak blocked the browser request (common with cloud IPs)\n"
+                "- Groq rate limit reached (wait 60s and retry)\n\n"
+                "**Try:** A different destination or a simpler query."
             )
 
-    # Display result
     st.markdown(response_text)
     st.session_state.messages.append({"role": "assistant", "content": response_text})
 
-    # Add to search history
     st.session_state.search_history.append({
         "query": query,
         "timestamp": datetime.datetime.now().strftime("%H:%M"),
