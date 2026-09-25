@@ -8,12 +8,30 @@ import urllib.request
 import streamlit as st
 
 # ──────────────────────────────────────────────────────────────────────────────
-# GROQ API KEY — loaded ONLY from Streamlit secrets (never from sidebar)
+# GROQ API KEY — tries secrets, then env var, then falls back to input
 # ──────────────────────────────────────────────────────────────────────────────
-try:
-    _GROQ_KEY = st.secrets["GROQ_API_KEY"].strip()
-except Exception:
-    _GROQ_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+def _load_groq_key() -> str:
+    # 1. Streamlit secrets (dict-style)
+    try:
+        v = st.secrets["GROQ_API_KEY"]
+        if v:
+            return str(v).strip()
+    except Exception:
+        pass
+    # 2. Streamlit secrets (.get style)
+    try:
+        v = st.secrets.get("GROQ_API_KEY", "")
+        if v:
+            return str(v).strip()
+    except Exception:
+        pass
+    # 3. Environment variable (set by Streamlit from secrets or manually)
+    v = os.environ.get("GROQ_API_KEY", "").strip()
+    if v:
+        return v
+    return ""
+
+_GROQ_KEY = _load_groq_key()
 
 if _GROQ_KEY:
     os.environ["GROQ_API_KEY"] = _GROQ_KEY
@@ -155,9 +173,12 @@ with st.sidebar:
 
     # Show key status (masked)
     if _GROQ_KEY:
-        st.success("✅ API Key loaded from secrets")
+        masked = _GROQ_KEY[:8] + "..." + _GROQ_KEY[-4:]
+        st.success(f"✅ API Key loaded ({masked})")
     else:
-        st.error("❌ GROQ_API_KEY not found in secrets")
+        st.error("❌ GROQ_API_KEY not set")
+        st.caption("Paste your key in Streamlit Cloud → Settings → Secrets:") 
+        st.code('GROQ_API_KEY = "gsk_xxxx"', language="toml")
 
     model_choice = st.selectbox(
         "🤖 Model",
